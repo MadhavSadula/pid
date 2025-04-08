@@ -1,0 +1,5 @@
+svgwrite
+pathfinding
+
+[plots]
+matplotlib
