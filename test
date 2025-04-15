@@ -1,0 +1,42 @@
+from openai import AzureOpenAI
+import sys
+import os
+import httpx
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+three_dirs_up = os.path.abspath(os.path.join(current_dir, "../../.."))
+sys.path.insert(0, three_dirs_up)
+os.environ['SSL_CERT_FILE']=os.path.join("apim-guardian-prv-fc-........-chain.pem")
+
+#Function for chatcompletion
+def CreateChatbot(query, session_states):
+  
+    if "chat_memory" not in session_states:
+        session_states["chat_memory"]=[]
+    chat_memory = session_states["chat_memory"]
+    try:
+        client1 = httpx.Client(verify=os.environ["SSL_CERT_FILE"])
+        client = AzureOpenAI(
+        api_key="ABCD1234",
+        api_version="20XX-XX-XX",
+        azure_endpoint="https://apim-guardian-prv-fc.......com",
+        http_client=client1
+        )
+        chat_memory.append({"role": "user", "content": query})
+        if len(chat_memory) > 10:
+            chat_memory.pop(0)
+
+        chatbot_response=''
+
+        completion = client.chat.completions.create(
+            model="gpt-4o",
+            messages=chat_memory, 
+            temperature=0.5
+        )
+        chatbot_response = completion.choices[0].message.content
+        chat_memory.append({"role": "assistant", "content": chatbot_response})
+        if len(chat_memory) > 10:
+            chat_memory.pop(0)
+        return [0,chatbot_response]
+    except Exception as e: 
+        return e
