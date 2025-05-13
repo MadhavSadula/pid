@@ -1,5 +1,3 @@
-# Type error occurred: get_user_stories() got an unexpected keyword argument 'work_item_type'
-
 import streamlit as st
 from ..Requirements_scripts.utility import create_folder,extract_folders,split_folders_titles, Next_Orphan_foldername, extract_titles
 from ..Requirements_scripts.TestCase import TestCaseDataRet
@@ -9,6 +7,7 @@ import sys
 from ..Requirements_scripts.Analytics import Analytics
 from .feedback import feedback_dialog
 from .common_style import apply_default_button_styles
+from bs4 import BeautifulSoup
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 three_dirs_up = os.path.abspath(os.path.join(current_dir, "../../.."))
@@ -610,12 +609,213 @@ def main_page(session_states):
                                     st.warning("Push denied. Set template and/or example to None and recreate.")
                 
                 with tab2:
-                    # Tab 2 content
-                    st.info("View and edit existing test cases")
+                    # Selecting a userstory from ADO
+                    organization_name = session_states[CONST_ENTER_ORG_NAME]
+                    project = session_states[CONST_SEL_PROJECT]
+                    team = session_states[CONST_SEL_STEAM]
+                    iteration = session_states[CONST_SEL_SITERATION]
+                    if organization_name:
+                        UserStory_title = st.selectbox(f"Select a Parent User Story from ADO Iteration Path: {organization_name}\\{project}\\{iteration}", Userstory_titles, index=None,key="Userstory_selectbox_from_ADO")
+                    else:
+                        UserStory_title = st.selectbox(f"Select a Parent User Story from ADO Iteration Path:", Userstory_titles,index=None,key="Userstory_selectbox_from_ADO")
+                        st.toast("Error: The organization could not be found, or you do not have access to it. Please verify in settings page")
+
+                    if UserStory_title:
+                        workitem_id = UserStory_title.split('~')[0]
+                        selected_story = user_story_dict[int(workitem_id)]
+                        selected_description = (
+                            f"{selected_story['Description']}\n"
+                            f"Acceptance Criteria: {selected_story['AcceptanceCriteria']}\n"
+                            f"How to Demo: {selected_story['Howtodemo']}\n"
+                            f"Additional Information: {selected_story['AdditionalInfo']}\n"
+                        )
+                        
+                        # Replace html text
+                        selected_description = selected_description.replace("<br>", "\n")
+                        cleaned_text = selected_description
+
+                        # Split the cleaned text into sections
+                        Desc=description = cleaned_text.split("Acceptance Criteria:")[0].strip()
+                        Accep= acceptance_criteria = cleaned_text.split("Acceptance Criteria:")[1].split("How to Demo:")[0].strip()
+                        demo= how_to_demo = cleaned_text.split("How to Demo:")[1].split("Additional Information:")[0].strip()
+                        AddInfo= Add_Info = cleaned_text.split("Additional Information:")[1].strip()
+
+                        # Display read-only label with value
+                        st.write(f"**ID:** {workitem_id}")
+                        if "curr_workitem_ID" in session_states:
+                            session_states["prev_workitem_ID"] = st.session_state["curr_workitem_ID"]
+
+                        st.session_state["curr_workitem_ID"] = workitem_id
+                        if "prev_workitem_ID" not in st.session_state:
+                            session_states["prev_workitem_ID"] = workitem_id
+
+                        if "Push_to_UpdateADO_flag" not in session_states:
+                                session_states["Push_to_UpdateADO_flag"] = True 
+
+                        # WorkItem ID's are different    
+                        if session_states["prev_workitem_ID"] != st.session_state["curr_workitem_ID"]:
+                            session_states["Recreate_Description"] = False
+                            session_states["Recreate_Acceptance_Criteria"] = False
+                            session_states["Recreate_How_to_Demo"] = False
+                            session_states["Recreate_Additional_Information"] = False
+                            session_states["Push_to_UpdateADO_flag"] = True 
+
+                        # Default set to False
+                        if "Recreate_Description" not in session_states:
+                            session_states["Recreate_Description"] = False
+                        if "Recreate_Acceptance_Criteria" not in session_states:
+                            session_states["Recreate_Acceptance_Criteria"] = False
+                        if "Recreate_How_to_Demo" not in session_states:
+                            session_states["Recreate_How_to_Demo"] = False
+                        if "Recreate_Additional_Information" not in session_states:
+                            session_states["Recreate_Additional_Information"] = False
+
+                        # Remove HTML tags from the acceptance criteria
+                        # Parse the acceptance criteria into individual points based on <li> tags in HTML
+                        soup = BeautifulSoup(acceptance_criteria, 'html.parser')
+                        acceptance_criteria_points = [li.get_text(strip=True) for li in soup.find_all('li')]
+
+                        selected_points = []
+
+                        for i, point in enumerate(acceptance_criteria_points):
+                            # Render the point as a checkbox
+                            if point:
+                                is_selected = st.checkbox(f"{i + 1}: {point}", key=f"acceptance_criteria_point_{i}")
+                                if is_selected:
+                                    selected_points.append(point)
+                        
+                        # Prepare the acceptance criteria prompt
+                        Accep_recreate_prompt = session_states[CONST_PROMPT_DICTIONARY][USERSTORY_DEFAULT_PROMPT_AC]
+                        ADOisenabledgetdata = []
+                        ADOisenabledgetdata.append({CONST_ACCEPT: Accep_recreate_prompt})
+
+                        create_button = st.button('Create Test Case', key='TESTCASE_ADO_create', help="Create a new test case based on selected Acceptance criteria")
+                        if create_button:
+                            with st.spinner("Creating test case, please wait..."):
+                                session_states[session_states[CONST_ACCEPTANCE_CRITERIA_OPTION]] = 1
+                                if selected_points:
+                                    Accep = "\n".join(selected_points)
+                                    session_states[CONST_ACCEPTANCE_CRITERIA_OPTION] = Accep
+                                    create_response(session_states[CONST_ACCEPTANCE_CRITERIA_OPTION], UserStory_title, session_states, 0)
+                                    analytics = Analytics(default_path, session_states.username)
+                                    analytics.write_analytics(CONST_TESTCASE_PAGE, session_states[CONST_ACCEPTANCE_CRITERIA_OPTION], "ADO-Testcase-Create", session_states[CONST_ENTER_ORG_NAME], session_states[CONST_SEL_PROJECT], session_states[CONST_SEL_SITERATION])
+                                    if session_states[page+"_enable"] == 3:
+                                            session_states[page+"_enable"] = 1
+                                            session_states[CONST_ACCEPTANCE_CRITERIA_OPTION]=None
+                                    if(session_states[CONST_ACCEPTANCE_CRITERIA_OPTION]+'data' in session_states):
+                                        session_states[session_states[CONST_ACCEPTANCE_CRITERIA_OPTION]+'text']=st.text_area(label=session_states[CONST_ACCEPTANCE_CRITERIA_OPTION],label_visibility="collapsed",height=700,value=session_states[session_states[CONST_ACCEPTANCE_CRITERIA_OPTION]+'data'])
+                                else:
+                                    st.info("Please select at least one Acceptance Criteria to create the data.")
                 
                 with tab3:
-                    # Simple message for creating a new test case tab
-                    st.info("Create a new test case functionality")
+                    # Create a new test case from scratch
+                    st.subheader("Create a New Test Case")
+                    
+                    # Text field for test case title
+                    test_case_title = st.text_input("Test Case Title", key="new_test_case_title")
+                    
+                    # Text areas for different sections of the test case
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        test_case_preconditions = st.text_area("Pre-Conditions", height=150, key="new_test_case_preconditions")
+                        test_case_steps = st.text_area("Steps", height=200, key="new_test_case_steps")
+                    
+                    with col2:
+                        test_case_expected = st.text_area("Expected Results", height=150, key="new_test_case_expected")
+                        test_case_additional = st.text_area("Additional Information", height=200, key="new_test_case_additional")
+                    
+                    # Store the inputs in session state for AI enhancement
+                    if "new_test_case_content" not in session_states:
+                        session_states["new_test_case_content"] = ""
+                    
+                    # Button to create the test case
+                    create_button = st.button("Generate Test Case", key="create_new_test_case_button")
+                    if create_button:
+                        if not test_case_title:
+                            st.warning("Please provide a title for the test case.")
+                        else:
+                            with st.spinner("Creating new test case, please wait..."):
+                                # Format the test case content
+                                test_case_content = (
+                                    f"Title: {test_case_title}\n"
+                                    f"Pre-Conditions: {test_case_preconditions}\n"
+                                    f"Steps: {test_case_steps}\n"
+                                    f"Expected Results: {test_case_expected}\n"
+                                    f"Additional Information: {test_case_additional}\n"
+                                )
+                                
+                                session_states["new_test_case_content"] = test_case_content
+                                
+                                # Use the AI to enhance or create the test case
+                                session_states[CONST_CREATE_NEW_TESTCASE_FLAG] = 1
+                                
+                                # Set a placeholder for acceptance criteria option to avoid None errors
+                                session_states[CONST_ACCEPTANCE_CRITERIA_OPTION] = "New Test Case"
+                                
+                                # Create response using the create_response function
+                                create_response('', 'Create new Test Case', session_states, 0)
+                                
+                                # Log analytics
+                                analytics = Analytics(default_path, session_states.username)
+                                analytics.write_analytics(CONST_TESTCASE_PAGE, "New Test Case", "Create")
+                                
+                                if session_states[page+"_enable"] == 3:
+                                    session_states[page+"_enable"] = 1
+                                    session_states[CONST_ACCEPTANCE_CRITERIA_OPTION] = None
+                                
+                                # Generate a unique folder name for this orphan test case
+                                session_states[CONST_TESTCASE_FOLDERNAME] = Next_Orphan_foldername(
+                                    session_states[CONST_TESTCASE_FINALIZED_PATH],
+                                    CONST_TESTCASE_PAGE,
+                                    session_states
+                                )
+                    
+                    # Display the AI-enhanced test case if available
+                    if session_states[CONST_ACCEPTANCE_CRITERIA_OPTION] and session_states[CONST_ACCEPTANCE_CRITERIA_OPTION]+'data' in session_states:
+                        st.subheader("Generated Test Case")
+                        session_states[session_states[CONST_ACCEPTANCE_CRITERIA_OPTION]+'text'] = st.text_area(
+                            label="AI-Enhanced Test Case",
+                            value=session_states[session_states[CONST_ACCEPTANCE_CRITERIA_OPTION]+'data'],
+                            height=400,
+                            key="generated_test_case_display"
+                        )
+                        
+                        # Recreate and save buttons
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            recreate_button = st.button("Recreate", key="new_testcase_recreate")
+                            if recreate_button:
+                                with st.spinner("Recreating test case, please wait..."):
+                                    create_response(session_states[CONST_ACCEPTANCE_CRITERIA_OPTION], 'Create new Test Case', session_states, 1)
+                                    analytics = Analytics(default_path, session_states.username)
+                                    analytics.write_analytics(CONST_TESTCASE_PAGE, session_states[CONST_ACCEPTANCE_CRITERIA_OPTION], "Recreate")
+                        
+                        with col2:
+                            save_button = st.button("Save", key="new_testcase_save")
+                            if save_button:
+                                session_states[test_case_save_button_key] = True
+                                analytics = Analytics(default_path, session_states.username)
+                                analytics.write_analytics(CONST_TESTCASE_PAGE, session_states[CONST_ACCEPTANCE_CRITERIA_OPTION], "Save")
+                                with st.spinner("Saving test case..."):
+                                    session_states[session_states[CONST_ACCEPTANCE_CRITERIA_OPTION]+'data'] = session_states[session_states[CONST_ACCEPTANCE_CRITERIA_OPTION]+'text']
+                                    finalize_data(
+                                        page,
+                                        session_states[CONST_TESTCASE_FOLDERNAME],
+                                        session_states[session_states[CONST_ACCEPTANCE_CRITERIA_OPTION]+'data'],
+                                        session_states[CONST_ACCEPTANCE_CRITERIA_OPTION],
+                                        session_states
+                                    )
+                            
+                            if session_states[test_case_save_button_key]:
+                                feedback_dialog(
+                                    session_states,
+                                    test_case_save_button_key,
+                                    default_path,
+                                    session_states.username,
+                                    CONST_TESTCASE_PAGE,
+                                    session_states[CONST_ACCEPTANCE_CRITERIA_OPTION]
+                                )
             else:
                 #Selecting UserStory
                 session_states[CONST_USER_STORY_TITLE] = st.selectbox("Select a Parent User Story (Created from the User Story Page) or Create new Test Case:", UserStory_titles,index=None,key="Testcase_selectbox")
@@ -891,10 +1091,17 @@ def load_test_cases(session_states):
 
     try:
         # Retrieve the list of test cases from the specified organization, project, team, and iteration
-        # Using the same function as user stories, but with a different work item type
-        test_cases_list = get_user_stories(session_states[CONST_ENTER_ORG_NAME], session_states[CONST_SEL_PROJECT],
-                                         session_states[CONST_SEL_STEAM], session_states[CONST_SEL_SITERATION], 
-                                         page_name, session_states, work_item_type="Test Case")
+        # We'll use the same function as user stories but handle the response differently to get test cases
+        test_cases_list = get_user_stories(session_states[CONST_ENTER_ORG_NAME], 
+                                         session_states[CONST_SEL_PROJECT],
+                                         session_states[CONST_SEL_STEAM], 
+                                         session_states[CONST_SEL_SITERATION], 
+                                         page_name, 
+                                         session_states)
+        
+        # Filter for work items that are test cases (you may need to adjust this based on your ADO setup)
+        # This assumes that test cases have a Type field with value "Test Case"
+        test_cases_list = [item for item in test_cases_list if item.get('Type', '') == 'Test Case']
         
         # Check if the retrieved test cases are in list format
         if isinstance(test_cases_list, list):
@@ -957,8 +1164,7 @@ def update_test_case_in_ado(session_states, test_case_id, updated_content):
             session_states[CONST_SEL_PROJECT], 
             test_case_id, 
             updated_content,
-            session_states,
-            work_item_type="Test Case"
+            session_states
         )
         
         if error_msg:
