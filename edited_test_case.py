@@ -1,4 +1,3 @@
-# An error occurred while loading test cases: 'str' object has no attribute 'get'
 import streamlit as st
 from ..Requirements_scripts.utility import create_folder,extract_folders,split_folders_titles, Next_Orphan_foldername, extract_titles
 from ..Requirements_scripts.TestCase import TestCaseDataRet
@@ -444,7 +443,7 @@ def main_page(session_states):
             titles=[]
 
             if session_states[TESTCASE_ADO_TOGGLE]:
-                tab1, tab2, tab3 = st.tabs([":mag: Enhance Existing Test Case", ":magic_wand: Create Test Case from User Story", ":star: Create New Test Case"])
+                tab1, tab2 = st.tabs([":mag: Enhance Existing Test Case", ":magic_wand: Create Test Case from User Story"])
                 
                 with tab1:
                     st.subheader("Enhance Existing Test Cases")
@@ -471,143 +470,161 @@ def main_page(session_states):
                         st.toast("Error: The organization could not be found, or you do not have access to it. Please verify in settings page")
                     
                     if test_case_title:
-                        # Extract test case ID from the selected title (format: "ID~Title")
-                        test_case_id = int(test_case_title.split('~')[0])
-                        session_states['selected_test_case_id'] = test_case_id
-                        
-                        # Get the selected test case details
-                        selected_test_case = test_case_dict[test_case_id]
-                        
-                        # Display test case details
-                        st.write(f"**ID:** {test_case_id}")
-                        st.write(f"**Title:** {selected_test_case['Title']}")
-                        
-                        # Track current and previous test case IDs
-                        if "curr_test_case_ID" in session_states:
-                            session_states["prev_test_case_ID"] = session_states["curr_test_case_ID"]
-                        
-                        session_states["curr_test_case_ID"] = test_case_id
-                        if "prev_test_case_ID" not in session_states:
-                            session_states["prev_test_case_ID"] = test_case_id
-                        
-                        # Reset recreation flags if a different test case is selected
-                        if session_states["prev_test_case_ID"] != session_states["curr_test_case_ID"]:
-                            session_states["Recreate_TestCase"] = False
-                            session_states["Push_to_UpdateADO_flag"] = True
-                        
-                        # Default set to False if not exists
-                        if "Recreate_TestCase" not in session_states:
-                            session_states["Recreate_TestCase"] = False
-                        
-                        # Create expandable sections for test case details
-                        with st.expander("View Test Case Details", expanded=True):
-                            st.markdown("### Pre-Conditions")
-                            st.write(selected_test_case['PreConditions'])
+                        try:
+                            # Extract test case ID from the selected title (format: "ID~Title")
+                            test_case_id_str = test_case_title.split('~')[0]
+                            # Check if the ID is numeric and convert appropriately
+                            if test_case_id_str.isdigit():
+                                test_case_id = int(test_case_id_str)
+                            else:
+                                test_case_id = test_case_id_str  # Keep as string if not numeric
+                                
+                            session_states['selected_test_case_id'] = test_case_id
                             
-                            st.markdown("### Steps")
-                            st.write(selected_test_case['Steps'])
+                            # Get the selected test case details - ensure we're checking for both string and int keys
+                            if test_case_id in test_case_dict:
+                                selected_test_case = test_case_dict[test_case_id]
+                            elif str(test_case_id) in test_case_dict:
+                                selected_test_case = test_case_dict[str(test_case_id)]
+                            else:
+                                st.error(f"Test case with ID {test_case_id} not found in test case dictionary")
+                                return
                             
-                            st.markdown("### Expected Results")
-                            st.write(selected_test_case['ExpectedResults'])
+                            # Display test case details
+                            st.write(f"**ID:** {test_case_id}")
+                            st.write(f"**Title:** {selected_test_case['Title']}")
                             
-                            if selected_test_case['AdditionalInfo']:
-                                st.markdown("### Additional Information")
-                                st.write(selected_test_case['AdditionalInfo'])
-                        
-                        # Key for tracking if this test case has been enhanced
-                        enhanced_key = f"enhanced_test_case_{test_case_id}"
-                        
-                        # If enhanced content exists, show it
-                        if enhanced_key in session_states:
-                            with st.expander("Enhanced Test Case", expanded=True):
-                                session_states[f"{enhanced_key}_text"] = st.text_area(
-                                    "Enhanced content",
-                                    value=session_states[enhanced_key],
-                                    height=400,
-                                    key=f"enhanced_display_{test_case_id}"
-                                )
-                        
-                        # Create buttons for enhancing and pushing to ADO
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            recreate_button = st.button("Recreate/Enhance", key="enhance_button")
-                            if recreate_button:
-                                with st.spinner("Enhancing test case, please wait..."):
-                                    session_states["Recreate_TestCase"] = True
-                                    
-                                    # Format the test case content
-                                    test_case_content = (
-                                        f"Title: {selected_test_case['Title']}\n"
-                                        f"Pre-Conditions: {selected_test_case['PreConditions']}\n"
-                                        f"Steps: {selected_test_case['Steps']}\n"
-                                        f"Expected Results: {selected_test_case['ExpectedResults']}\n"
-                                        f"Additional Information: {selected_test_case['AdditionalInfo']}\n"
-                                    )
-                                    
-                                    # Enhance the test case
-                                    enhanced_content = enhance_test_case(test_case_content, session_states, 1)
-                                    
-                                    # Store in session state
-                                    session_states[enhanced_key] = enhanced_content
-                                    
-                                    # Check if template and example allow pushing to ADO
-                                    template = session_states[CONST_TESTCASE_USER_TEMPLATE]
-                                    example = session_states[CONST_TESTCASE_USER_EXAMPLE]
-                                    
-                                    if (template == '' or template == 'None') and (example == '' or example == 'None'):
-                                        session_states["Push_to_UpdateADO_flag"] = True
-                                    else:
-                                        session_states["Push_to_UpdateADO_flag"] = False
-                                    
-                                    # Log analytics
-                                    analytics = Analytics(default_path, session_states.username)
-                                    analytics.write_analytics(
-                                        CONST_TESTCASE_PAGE, 
-                                        str(test_case_id), 
-                                        "ADO-Enhance", 
-                                        organization_name, 
-                                        project, 
-                                        iteration
-                                    )
-                        
-                        with col2:
-                            # Only show push button if enhanced version exists and pushing is allowed
+                            # Track current and previous test case IDs
+                            if "curr_test_case_ID" in session_states:
+                                session_states["prev_test_case_ID"] = session_states["curr_test_case_ID"]
+                            
+                            session_states["curr_test_case_ID"] = test_case_id
+                            if "prev_test_case_ID" not in session_states:
+                                session_states["prev_test_case_ID"] = test_case_id
+                            
+                            # Reset recreation flags if a different test case is selected
+                            if session_states["prev_test_case_ID"] != session_states["curr_test_case_ID"]:
+                                session_states["Recreate_TestCase"] = False
+                                session_states["Push_to_UpdateADO_flag"] = True
+                            
+                            # Default set to False if not exists
+                            if "Recreate_TestCase" not in session_states:
+                                session_states["Recreate_TestCase"] = False
+                            
+                            # Create expandable sections for test case details
+                            with st.expander("View Test Case Details", expanded=True):
+                                st.markdown("### Pre-Conditions")
+                                st.write(selected_test_case['PreConditions'])
+                                
+                                st.markdown("### Steps")
+                                st.write(selected_test_case['Steps'])
+                                
+                                st.markdown("### Expected Results")
+                                st.write(selected_test_case['ExpectedResults'])
+                                
+                                if selected_test_case['AdditionalInfo']:
+                                    st.markdown("### Additional Information")
+                                    st.write(selected_test_case['AdditionalInfo'])
+                            
+                            # Key for tracking if this test case has been enhanced
+                            enhanced_key = f"enhanced_test_case_{test_case_id}"
+                            
+                            # If enhanced content exists, show it
                             if enhanced_key in session_states:
-                                if session_states["Push_to_UpdateADO_flag"]:
-                                    push_button = st.button("Push to ADO", key="push_to_ado_button")
-                                    if push_button:
-                                        with st.spinner("Pushing test case to ADO, please wait..."):
-                                            # Get the latest content from the text area
-                                            if f"{enhanced_key}_text" in session_states:
-                                                content_to_push = session_states[f"{enhanced_key}_text"]
-                                            else:
-                                                content_to_push = session_states[enhanced_key]
-                                                
-                                            # Update test case in ADO
-                                            error_msg = update_test_case_in_ado(
-                                                session_states, 
-                                                test_case_id, 
-                                                content_to_push
-                                            )
-                                            
-                                            if error_msg:
-                                                st.toast(f"Error updating test case in ADO: {error_msg}")
-                                            else:
-                                                st.success("Test case successfully pushed to ADO!")
-                                                
-                                                # Log analytics
-                                                analytics = Analytics(default_path, session_states.username)
-                                                analytics.write_analytics(
-                                                    CONST_TESTCASE_PAGE, 
-                                                    str(test_case_id), 
-                                                    "ADO-Push", 
-                                                    organization_name, 
-                                                    project, 
-                                                    iteration
+                                with st.expander("Enhanced Test Case", expanded=True):
+                                    session_states[f"{enhanced_key}_text"] = st.text_area(
+                                        "Enhanced content",
+                                        value=session_states[enhanced_key],
+                                        height=400,
+                                        key=f"enhanced_display_{test_case_id}"
+                                    )
+                            
+                            # Create buttons for enhancing and pushing to ADO
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                recreate_button = st.button("Recreate/Enhance", key="enhance_button")
+                                if recreate_button:
+                                    with st.spinner("Enhancing test case, please wait..."):
+                                        session_states["Recreate_TestCase"] = True
+                                        
+                                        # Format the test case content
+                                        test_case_content = (
+                                            f"Title: {selected_test_case['Title']}\n"
+                                            f"Pre-Conditions: {selected_test_case['PreConditions']}\n"
+                                            f"Steps: {selected_test_case['Steps']}\n"
+                                            f"Expected Results: {selected_test_case['ExpectedResults']}\n"
+                                            f"Additional Information: {selected_test_case['AdditionalInfo']}\n"
+                                        )
+                                        
+                                        # Enhance the test case
+                                        enhanced_content = enhance_test_case(test_case_content, session_states, 1)
+                                        
+                                        # Store in session state
+                                        session_states[enhanced_key] = enhanced_content
+                                        
+                                        # Check if template and example allow pushing to ADO
+                                        template = session_states[CONST_TESTCASE_USER_TEMPLATE]
+                                        example = session_states[CONST_TESTCASE_USER_EXAMPLE]
+                                        
+                                        if (template == '' or template == 'None') and (example == '' or example == 'None'):
+                                            session_states["Push_to_UpdateADO_flag"] = True
+                                        else:
+                                            session_states["Push_to_UpdateADO_flag"] = False
+                                        
+                                        # Log analytics
+                                        analytics = Analytics(default_path, session_states.username)
+                                        analytics.write_analytics(
+                                            CONST_TESTCASE_PAGE, 
+                                            str(test_case_id), 
+                                            "ADO-Enhance", 
+                                            organization_name, 
+                                            project, 
+                                            iteration
+                                        )
+                            
+                            with col2:
+                                # Only show push button if enhanced version exists and pushing is allowed
+                                if enhanced_key in session_states:
+                                    if session_states["Push_to_UpdateADO_flag"]:
+                                        push_button = st.button("Push to ADO", key="push_to_ado_button")
+                                        if push_button:
+                                            with st.spinner("Pushing test case to ADO, please wait..."):
+                                                # Get the latest content from the text area
+                                                if f"{enhanced_key}_text" in session_states:
+                                                    content_to_push = session_states[f"{enhanced_key}_text"]
+                                                else:
+                                                    content_to_push = session_states[enhanced_key]
+                                                    
+                                                # Update test case in ADO
+                                                error_msg = update_test_case_in_ado(
+                                                    session_states, 
+                                                    test_case_id, 
+                                                    content_to_push
                                                 )
-                                else:
-                                    st.warning("Push denied. Set template and/or example to None and recreate.")
+                                                
+                                                if error_msg:
+                                                    st.toast(f"Error updating test case in ADO: {error_msg}")
+                                                else:
+                                                    st.success("Test case successfully pushed to ADO!")
+                                                    
+                                                    # Log analytics
+                                                    analytics = Analytics(default_path, session_states.username)
+                                                    analytics.write_analytics(
+                                                        CONST_TESTCASE_PAGE, 
+                                                        str(test_case_id), 
+                                                        "ADO-Push", 
+                                                        organization_name, 
+                                                        project, 
+                                                        iteration
+                                                    )
+                                    else:
+                                        st.warning("Push denied. Set template and/or example to None and recreate.")
+                        except Exception as e:
+                            error_msg = handle_exception(e)
+                            st.error(f"Error processing test case: {error_msg}")
+                            if verify_log_variable(page, LoggerObject):
+                                logger.error(f"{page} Error processing test case: {error_msg}")
                 
                 with tab2:
                     # Selecting a userstory from ADO
@@ -707,116 +724,6 @@ def main_page(session_states):
                                         session_states[session_states[CONST_ACCEPTANCE_CRITERIA_OPTION]+'text']=st.text_area(label=session_states[CONST_ACCEPTANCE_CRITERIA_OPTION],label_visibility="collapsed",height=700,value=session_states[session_states[CONST_ACCEPTANCE_CRITERIA_OPTION]+'data'])
                                 else:
                                     st.info("Please select at least one Acceptance Criteria to create the data.")
-                
-                with tab3:
-                    # Create a new test case from scratch
-                    st.subheader("Create a New Test Case")
-                    
-                    # Text field for test case title
-                    test_case_title = st.text_input("Test Case Title", key="new_test_case_title")
-                    
-                    # Text areas for different sections of the test case
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        test_case_preconditions = st.text_area("Pre-Conditions", height=150, key="new_test_case_preconditions")
-                        test_case_steps = st.text_area("Steps", height=200, key="new_test_case_steps")
-                    
-                    with col2:
-                        test_case_expected = st.text_area("Expected Results", height=150, key="new_test_case_expected")
-                        test_case_additional = st.text_area("Additional Information", height=200, key="new_test_case_additional")
-                    
-                    # Store the inputs in session state for AI enhancement
-                    if "new_test_case_content" not in session_states:
-                        session_states["new_test_case_content"] = ""
-                    
-                    # Button to create the test case
-                    create_button = st.button("Generate Test Case", key="create_new_test_case_button")
-                    if create_button:
-                        if not test_case_title:
-                            st.warning("Please provide a title for the test case.")
-                        else:
-                            with st.spinner("Creating new test case, please wait..."):
-                                # Format the test case content
-                                test_case_content = (
-                                    f"Title: {test_case_title}\n"
-                                    f"Pre-Conditions: {test_case_preconditions}\n"
-                                    f"Steps: {test_case_steps}\n"
-                                    f"Expected Results: {test_case_expected}\n"
-                                    f"Additional Information: {test_case_additional}\n"
-                                )
-                                
-                                session_states["new_test_case_content"] = test_case_content
-                                
-                                # Use the AI to enhance or create the test case
-                                session_states[CONST_CREATE_NEW_TESTCASE_FLAG] = 1
-                                
-                                # Set a placeholder for acceptance criteria option to avoid None errors
-                                session_states[CONST_ACCEPTANCE_CRITERIA_OPTION] = "New Test Case"
-                                
-                                # Create response using the create_response function
-                                create_response('', 'Create new Test Case', session_states, 0)
-                                
-                                # Log analytics
-                                analytics = Analytics(default_path, session_states.username)
-                                analytics.write_analytics(CONST_TESTCASE_PAGE, "New Test Case", "Create")
-                                
-                                if session_states[page+"_enable"] == 3:
-                                    session_states[page+"_enable"] = 1
-                                    session_states[CONST_ACCEPTANCE_CRITERIA_OPTION] = None
-                                
-                                # Generate a unique folder name for this orphan test case
-                                session_states[CONST_TESTCASE_FOLDERNAME] = Next_Orphan_foldername(
-                                    session_states[CONST_TESTCASE_FINALIZED_PATH],
-                                    CONST_TESTCASE_PAGE,
-                                    session_states
-                                )
-                    
-                    # Display the AI-enhanced test case if available
-                    if session_states[CONST_ACCEPTANCE_CRITERIA_OPTION] and session_states[CONST_ACCEPTANCE_CRITERIA_OPTION]+'data' in session_states:
-                        st.subheader("Generated Test Case")
-                        session_states[session_states[CONST_ACCEPTANCE_CRITERIA_OPTION]+'text'] = st.text_area(
-                            label="AI-Enhanced Test Case",
-                            value=session_states[session_states[CONST_ACCEPTANCE_CRITERIA_OPTION]+'data'],
-                            height=400,
-                            key="generated_test_case_display"
-                        )
-                        
-                        # Recreate and save buttons
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            recreate_button = st.button("Recreate", key="new_testcase_recreate")
-                            if recreate_button:
-                                with st.spinner("Recreating test case, please wait..."):
-                                    create_response(session_states[CONST_ACCEPTANCE_CRITERIA_OPTION], 'Create new Test Case', session_states, 1)
-                                    analytics = Analytics(default_path, session_states.username)
-                                    analytics.write_analytics(CONST_TESTCASE_PAGE, session_states[CONST_ACCEPTANCE_CRITERIA_OPTION], "Recreate")
-                        
-                        with col2:
-                            save_button = st.button("Save", key="new_testcase_save")
-                            if save_button:
-                                session_states[test_case_save_button_key] = True
-                                analytics = Analytics(default_path, session_states.username)
-                                analytics.write_analytics(CONST_TESTCASE_PAGE, session_states[CONST_ACCEPTANCE_CRITERIA_OPTION], "Save")
-                                with st.spinner("Saving test case..."):
-                                    session_states[session_states[CONST_ACCEPTANCE_CRITERIA_OPTION]+'data'] = session_states[session_states[CONST_ACCEPTANCE_CRITERIA_OPTION]+'text']
-                                    finalize_data(
-                                        page,
-                                        session_states[CONST_TESTCASE_FOLDERNAME],
-                                        session_states[session_states[CONST_ACCEPTANCE_CRITERIA_OPTION]+'data'],
-                                        session_states[CONST_ACCEPTANCE_CRITERIA_OPTION],
-                                        session_states
-                                    )
-                            
-                            if session_states[test_case_save_button_key]:
-                                feedback_dialog(
-                                    session_states,
-                                    test_case_save_button_key,
-                                    default_path,
-                                    session_states.username,
-                                    CONST_TESTCASE_PAGE,
-                                    session_states[CONST_ACCEPTANCE_CRITERIA_OPTION]
-                                )
             else:
                 #Selecting UserStory
                 session_states[CONST_USER_STORY_TITLE] = st.selectbox("Select a Parent User Story (Created from the User Story Page) or Create new Test Case:", UserStory_titles,index=None,key="Testcase_selectbox")
@@ -1100,30 +1007,89 @@ def load_test_cases(session_states):
                                          page_name, 
                                          session_states)
         
-        # Filter for work items that are test cases (you may need to adjust this based on your ADO setup)
-        # This assumes that test cases have a Type field with value "Test Case"
-        test_cases_list = [item for item in test_cases_list if item.get('Type', '') == 'Test Case']
+        # Log the response type for debugging
+        if verify_log_variable(page, loggerConfig_object):
+            logger.info(f"{page} Response type from get_user_stories: {type(test_cases_list)}")
+            if isinstance(test_cases_list, list) and len(test_cases_list) > 0:
+                logger.info(f"{page} First item type: {type(test_cases_list[0])}")
+                if isinstance(test_cases_list[0], dict):
+                    logger.info(f"{page} Keys in first item: {list(test_cases_list[0].keys())}")
+            elif isinstance(test_cases_list, str):
+                logger.info(f"{page} Response as string (first 100 chars): {test_cases_list[:100]}")
         
-        # Check if the retrieved test cases are in list format
-        if isinstance(test_cases_list, list):
+        # Check if test_cases_list is a list and not empty
+        if not isinstance(test_cases_list, list):
+            if verify_log_variable(page, loggerConfig_object):
+                logger.error(f"{page} Invalid response format: expected list, got {type(test_cases_list)}")
+            if isinstance(test_cases_list, str):
+                st.toast(f"API returned string instead of test cases list: {test_cases_list[:100]}...")
+            else:
+                st.toast(f"API returned unexpected type: {type(test_cases_list)}")
+            return {}, []
+        
+        # If the list is empty, return empty results
+        if not test_cases_list:
+            if verify_log_variable(page, loggerConfig_object):
+                logger.info(f"{page} Empty list returned from API")
+            return {}, []
+            
+        # Filter for work items that are test cases (you may need to adjust this based on your ADO setup)
+        # Handle both dictionary items and possible string items
+        filtered_test_cases = []
+        for i, item in enumerate(test_cases_list):
+            # Log item type for debugging
+            if verify_log_variable(page, loggerConfig_object):
+                logger.info(f"{page} Item {i} type: {type(item)}")
+                if not isinstance(item, dict) and not isinstance(item, str):
+                    logger.info(f"{page} Non-dict, non-string item found: {item}")
+                    
+            # Check if the item is a dictionary before trying to access attributes
+            if isinstance(item, dict):
+                # Check for different possible field names for the work item type
+                if item.get('Type', '') == 'Test Case' or item.get('WorkItemType', '') == 'Test Case':
+                    filtered_test_cases.append(item)
+                    if verify_log_variable(page, loggerConfig_object):
+                        logger.info(f"{page} Added test case with ID: {item.get('ID', 'Unknown ID')}")
+            elif isinstance(item, str):
+                if verify_log_variable(page, loggerConfig_object):
+                    logger.info(f"{page} String item found (first 50 chars): {item[:50]}")
+        
+        # Log the number of filtered test cases
+        if verify_log_variable(page, loggerConfig_object):
+            logger.info(f"{page} Total items: {len(test_cases_list)}, Filtered test cases: {len(filtered_test_cases)}")
+        
+        # Proceed with the filtered list
+        if filtered_test_cases:
             FT = []    
             test_case_dict = {}
-            for test_case in test_cases_list:
-                tc_list = str(test_case['ID']) + '~' + test_case['Title']
+            for test_case in filtered_test_cases:
+                # Skip any non-dictionary items that might have slipped through
+                if not isinstance(test_case, dict):
+                    continue
+                    
+                # Safely extract keys with fallbacks
+                test_id = test_case.get('ID', 'Unknown')
+                test_title = test_case.get('Title', 'Untitled')
+                
+                tc_list = f"{test_id}~{test_title}"
                 FT.append(tc_list)
-                test_case_dict[test_case['ID']] = {
-                    "Title": test_case['Title'],
+                test_case_dict[test_id] = {
+                    "Title": test_title,
                     "Steps": test_case.get('Steps', ''),
                     "ExpectedResults": test_case.get('ExpectedResults', ''),
                     "PreConditions": test_case.get('PreConditions', ''),
                     "AdditionalInfo": test_case.get('AdditionalInfo', '')
                 }
             if verify_log_variable(page, loggerConfig_object):
+                logger.info(f"{page} Successfully processed {len(FT)} test cases")
                 logger.info(f"{page} load_test_cases function Ended")
             return test_case_dict, FT
         else:
-            # Handle the case where the return value is not a list
-            return {}, []  # or return an error message depending on your design    
+            # No test cases found
+            if verify_log_variable(page, loggerConfig_object):
+                logger.info(f"{page} No test cases found in the response")
+            st.toast("No test cases found in the current iteration")
+            return {}, []  
     except KeyError as e:
         st.toast(f"Key error: {e}. Please check the session state keys.")
         if verify_log_variable(page, loggerConfig_object):
